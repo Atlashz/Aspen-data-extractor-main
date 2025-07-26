@@ -1,0 +1,26 @@
+# Aspen数据提取工具所需依赖包
+
+# 核心依赖
+numpy>=1.21.0
+pandas>=1.3.0
+
+# 数据处理和数据库
+openpyxl>=3.0.0
+sqlite3  # Python内置模块
+
+# Windows COM接口 (仅限Windows)
+pywin32>=227  # 用于Aspen Plus COM接口
+
+# 数据验证
+pydantic>=1.8.0
+
+# 可选: 测试工具
+pytest>=6.2.0
+
+# Optional dependencies for Aspen integration (Windows only)
+# pywin32>=301  # Uncomment for Windows with Aspen Plus
+
+# Development dependencies (optional)
+black>=21.0.0
+flake8>=3.9.0
+mypy>=0.910

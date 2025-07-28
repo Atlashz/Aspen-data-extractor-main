@@ -43,7 +43,9 @@ except ImportError:
 # Import custom data interfaces
 from data_interfaces import (
     AspenProcessData, StreamData, UnitOperationData, UtilityData,
-    EquipmentSizeData, EquipmentType, MaterialType, PressureLevel
+    EquipmentSizeData, EquipmentType, MaterialType, PressureLevel,
+    CostItem, CapexData, OpexData, FinancialParameters, EconomicAnalysisResults,
+    CostCategory, CurrencyType, CostBasis
 )
 
 # Setup logging
@@ -734,6 +736,761 @@ class AspenCOMInterface:
         # The block_name from Aspen is already the user-defined name (e.g., "B1", "COOL2")
         # Return it directly as the custom name
         return block_name
+    
+    # =================== Economic Data Extraction Methods ===================
+    
+    def extract_economic_data(self, project_name: str = None) -> EconomicAnalysisResults:
+        """
+        Extract economic data from Aspen Plus simulation
+        
+        Args:
+            project_name: Optional project name for the analysis
+            
+        Returns:
+            EconomicAnalysisResults: Complete economic analysis data
+        """
+        if not self.connected:
+            raise AspenConnectionError("Not connected to Aspen Plus")
+        
+        logger.info("🔄 Extracting economic data from Aspen Plus...")
+        
+        # Create economic analysis results container
+        results = EconomicAnalysisResults(
+            project_name=project_name or "Aspen_Simulation",
+            timestamp=datetime.now(),
+            analysis_version="1.0"
+        )
+        
+        try:
+            # Extract CAPEX data
+            capex_data = self._extract_capex_data(results.project_name)
+            results.capex_data = capex_data
+            results.total_capex = capex_data.calculate_total_capex()
+            
+            # Extract OPEX data
+            opex_data = self._extract_opex_data(results.project_name, results.total_capex)
+            results.opex_data = opex_data
+            results.annual_opex = opex_data.calculate_annual_opex(results.total_capex)
+            
+            # Extract financial parameters
+            financial_params = self._extract_financial_parameters(results.project_name)
+            results.financial_params = financial_params
+            
+            # Calculate economic indicators
+            self._calculate_economic_indicators(results)
+            
+            # Extract equipment sizing for costing
+            results.equipment_list = self._extract_equipment_for_costing()
+            
+            # Add metadata
+            results.data_sources.extend([
+                "Aspen Plus COM Interface",
+                "Equipment sizing correlations",
+                "Standard cost databases"
+            ])
+            
+            results.estimation_methods.extend([
+                "Equipment module costing",
+                "Installation factor method",
+                "Utilities consumption analysis"
+            ])
+            
+            logger.info("✅ Economic data extraction completed")
+            
+        except Exception as e:
+            logger.error(f"Error extracting economic data: {str(e)}")
+            results.assumptions.append(f"Extraction error: {str(e)}")
+            raise
+        
+        return results
+    
+    def _extract_capex_data(self, project_name: str) -> CapexData:
+        """
+        Extract capital expenditure data from Aspen simulation
+        
+        Args:
+            project_name: Project name for the analysis
+            
+        Returns:
+            CapexData: Capital cost data structure
+        """
+        capex_data = CapexData(
+            project_name=project_name,
+            currency=CurrencyType.USD,
+            basis_year=2024
+        )
+        
+        try:
+            # Extract equipment data for costing
+            equipment_data = self.extract_all_equipment()
+            
+            # Create EquipmentSizer for cost estimation
+            sizer = EquipmentSizer()
+            
+            for block_name, eq_data in equipment_data.items():
+                try:
+                    # Get equipment type and parameters
+                    eq_type = eq_data.get('type', 'unknown')
+                    params = eq_data.get('parameters', {})
+                    
+                    # Estimate equipment cost based on type and size
+                    base_cost = self._estimate_equipment_cost(eq_type, params, block_name)
+                    
+                    if base_cost > 0:
+                        # Create cost item for equipment
+                        cost_item = CostItem(
+                            name=block_name,
+                            category=CostCategory.EQUIPMENT,
+                            base_cost=base_cost,
+                            currency=CurrencyType.USD,
+                            quantity=1.0,
+                            unit="each",
+                            installation_factor=2.5,  # Typical installation factor
+                            material_factor=1.0,
+                            location_factor=1.0,
+                            escalation_factor=1.05,  # 5% escalation
+                            estimation_method="COM interface sizing",
+                            cost_basis=CostBasis.INSTALLED
+                        )
+                        
+                        capex_data.add_cost_item(cost_item)
+                        logger.debug(f"Added equipment cost: {block_name} - ${base_cost:,.0f}")
+                
+                except Exception as e:
+                    logger.warning(f"Could not estimate cost for {block_name}: {str(e)}")
+            
+            # Add indirect costs
+            self._add_indirect_capex_costs(capex_data)
+            
+        except Exception as e:
+            logger.error(f"Error extracting CAPEX data: {str(e)}")
+            raise
+        
+        return capex_data
+    
+    def _extract_opex_data(self, project_name: str, total_capex: float) -> OpexData:
+        """
+        Extract operating expenditure data from Aspen simulation
+        
+        Args:
+            project_name: Project name for the analysis
+            total_capex: Total capital expenditure for percentage-based costs
+            
+        Returns:
+            OpexData: Operating cost data structure
+        """
+        opex_data = OpexData(
+            project_name=project_name,
+            currency=CurrencyType.USD,
+            operating_hours=8760.0  # Full year operation
+        )
+        
+        try:
+            # Extract utility consumption from equipment
+            self._extract_utility_costs(opex_data)
+            
+            # Extract raw material costs from streams
+            self._extract_raw_material_costs(opex_data)
+            
+            # Add labor costs (estimated)
+            self._add_labor_costs(opex_data, total_capex)
+            
+            # Add maintenance costs
+            self._add_maintenance_costs(opex_data, total_capex)
+            
+        except Exception as e:
+            logger.error(f"Error extracting OPEX data: {str(e)}")
+            raise
+        
+        return opex_data
+    
+    def _extract_financial_parameters(self, project_name: str) -> FinancialParameters:
+        """
+        Extract or set default financial parameters
+        
+        Args:
+            project_name: Project name for the analysis
+            
+        Returns:
+            FinancialParameters: Financial analysis parameters
+        """
+        financial_params = FinancialParameters(
+            project_name=project_name,
+            project_life=20,
+            discount_rate=0.10,
+            tax_rate=0.25,
+            depreciation_method="straight_line",
+            depreciation_life=10
+        )
+        
+        # Try to extract production capacity from major product streams
+        try:
+            stream_data = self.extract_all_streams()
+            product_streams = self._identify_product_streams(stream_data)
+            
+            if product_streams:
+                # Use the largest product stream as main product
+                main_product = max(product_streams.items(), key=lambda x: x[1].mass_flow)
+                financial_params.annual_production = main_product[1].mass_flow * 8760  # kg/year
+                logger.info(f"Estimated annual production: {financial_params.annual_production:,.0f} kg/year")
+        
+        except Exception as e:
+            logger.warning(f"Could not estimate production capacity: {str(e)}")
+        
+        return financial_params
+    
+    def _estimate_equipment_cost(self, eq_type: str, params: Dict[str, Any], block_name: str) -> float:
+        """
+        Estimate equipment cost based on type and parameters
+        
+        Args:
+            eq_type: Equipment type string
+            params: Equipment parameters from Aspen
+            block_name: Equipment block name
+            
+        Returns:
+            Estimated equipment cost in USD
+        """
+        base_cost = 0.0
+        
+        try:
+            # Equipment-specific cost correlations
+            if 'REACTOR' in eq_type.upper() or 'CSTR' in eq_type.upper():
+                # Reactor costing based on volume
+                volume = params.get('volume_m3', 10.0)  # Default 10 m3
+                base_cost = 50000 * (volume ** 0.6)  # Cost scaling factor
+                
+            elif 'PUMP' in eq_type.upper():
+                # Pump costing based on power
+                power = params.get('power_kW', 10.0)  # Default 10 kW
+                base_cost = 5000 * (power ** 0.7)
+                
+            elif 'COMPRESSOR' in eq_type.upper():
+                # Compressor costing based on power
+                power = params.get('power_kW', 100.0)  # Default 100 kW
+                base_cost = 15000 * (power ** 0.7)
+                
+            elif 'HEAT' in eq_type.upper() or 'HX' in eq_type.upper():
+                # Heat exchanger costing based on area
+                area = params.get('area_m2', 100.0)  # Default 100 m2
+                base_cost = 1000 * (area ** 0.65)
+                
+            elif 'COLUMN' in eq_type.upper() or 'DISTIL' in eq_type.upper():
+                # Distillation column costing based on diameter and height
+                diameter = params.get('diameter_m', 2.0)  # Default 2 m
+                height = params.get('height_m', 20.0)    # Default 20 m
+                base_cost = 25000 * (diameter ** 1.5) * (height ** 0.8)
+                
+            elif 'SEPARATOR' in eq_type.upper() or 'FLASH' in eq_type.upper():
+                # Separator costing based on volume
+                volume = params.get('volume_m3', 5.0)  # Default 5 m3
+                base_cost = 20000 * (volume ** 0.6)
+                
+            elif 'TANK' in eq_type.upper() or 'VESSEL' in eq_type.upper():
+                # Tank costing based on volume
+                volume = params.get('volume_m3', 20.0)  # Default 20 m3
+                base_cost = 8000 * (volume ** 0.7)
+                
+            else:
+                # Generic equipment cost
+                base_cost = 25000  # Default cost for unknown equipment
+            
+            # Apply minimum cost
+            base_cost = max(base_cost, 5000)  # Minimum $5,000
+            
+            logger.debug(f"Estimated cost for {block_name} ({eq_type}): ${base_cost:,.0f}")
+            
+        except Exception as e:
+            logger.warning(f"Error estimating cost for {block_name}: {str(e)}")
+            base_cost = 25000  # Default fallback cost
+        
+        return base_cost
+    
+    def _add_indirect_capex_costs(self, capex_data: CapexData):
+        """
+        Add indirect CAPEX costs (engineering, construction, etc.)
+        
+        Args:
+            capex_data: CAPEX data structure to modify
+        """
+        # Calculate equipment subtotal
+        equipment_total = sum(item.calculate_installed_cost() 
+                            for item in capex_data.equipment_costs.values())
+        
+        if equipment_total > 0:
+            # Engineering costs (12% of equipment)
+            engineering_cost = CostItem(
+                name="Engineering & Design",
+                category=CostCategory.ENGINEERING,
+                base_cost=equipment_total * 0.12,
+                currency=CurrencyType.USD,
+                estimation_method="Percentage of equipment cost"
+            )
+            capex_data.add_cost_item(engineering_cost)
+            
+            # Construction management (8% of equipment)
+            construction_cost = CostItem(
+                name="Construction Management",
+                category=CostCategory.CONSTRUCTION,
+                base_cost=equipment_total * 0.08,
+                currency=CurrencyType.USD,
+                estimation_method="Percentage of equipment cost"
+            )
+            capex_data.add_cost_item(construction_cost)
+    
+    def _extract_utility_costs(self, opex_data: OpexData):
+        """
+        Extract utility costs from equipment data
+        
+        Args:
+            opex_data: OPEX data structure to modify
+        """
+        try:
+            equipment_data = self.extract_all_equipment()
+            
+            # Standard utility rates (USD per unit)
+            utility_rates = {
+                'electricity': 0.08,      # $/kWh
+                'steam': 25.0,           # $/MT
+                'cooling_water': 0.05,   # $/m3
+                'fuel_gas': 8.0          # $/GJ
+            }
+            
+            total_power = 0.0
+            total_heating = 0.0
+            total_cooling = 0.0
+            
+            # Sum up utility consumption from all equipment
+            for block_name, eq_data in equipment_data.items():
+                params = eq_data.get('parameters', {})
+                
+                # Power consumption
+                power_kw = params.get('power_kW', 0.0)
+                if power_kw > 0:
+                    total_power += power_kw
+                
+                # Heating duty
+                duty_kw = params.get('duty_kW', 0.0)
+                if duty_kw > 0:  # Heating
+                    total_heating += duty_kw
+                elif duty_kw < 0:  # Cooling
+                    total_cooling += abs(duty_kw)
+            
+            # Calculate annual utility costs
+            if total_power > 0:
+                annual_electricity_cost = total_power * 8760 * utility_rates['electricity']
+                electricity_item = CostItem(
+                    name="Electricity",
+                    category=CostCategory.UTILITIES,
+                    base_cost=annual_electricity_cost,
+                    currency=CurrencyType.USD,
+                    unit="kWh/year",
+                    estimation_method="Equipment power consumption"
+                )
+                opex_data.add_opex_item(electricity_item)
+            
+            if total_heating > 0:
+                # Convert heating duty to steam consumption (assuming 2000 kJ/kg steam)
+                steam_consumption_kg_hr = total_heating * 3600 / 2000000  # kg/hr
+                annual_steam_cost = steam_consumption_kg_hr * 8760 * utility_rates['steam'] / 1000
+                steam_item = CostItem(
+                    name="Process Steam",
+                    category=CostCategory.UTILITIES,
+                    base_cost=annual_steam_cost,
+                    currency=CurrencyType.USD,
+                    unit="MT/year",
+                    estimation_method="Heating duty conversion"
+                )
+                opex_data.add_opex_item(steam_item)
+            
+            if total_cooling > 0:
+                # Convert cooling duty to cooling water (assuming 20°C ΔT)
+                cooling_water_m3_hr = total_cooling * 3600 / (4186 * 1000 * 20)  # m3/hr
+                annual_cooling_cost = cooling_water_m3_hr * 8760 * utility_rates['cooling_water']
+                cooling_item = CostItem(
+                    name="Cooling Water",
+                    category=CostCategory.UTILITIES,
+                    base_cost=annual_cooling_cost,
+                    currency=CurrencyType.USD,
+                    unit="m3/year",
+                    estimation_method="Cooling duty conversion"
+                )
+                opex_data.add_opex_item(cooling_item)
+                
+        except Exception as e:
+            logger.warning(f"Error extracting utility costs: {str(e)}")
+    
+    def _extract_raw_material_costs(self, opex_data: OpexData):
+        """
+        Extract raw material costs from feed streams
+        
+        Args:
+            opex_data: OPEX data structure to modify
+        """
+        try:
+            stream_data = self.extract_all_streams()
+            feed_streams = self._identify_feed_streams(stream_data)
+            
+            # Standard raw material prices (USD per MT)
+            material_prices = {
+                'H2': 2000,      # Hydrogen
+                'CO': 500,       # Carbon monoxide
+                'CO2': 100,      # Carbon dioxide
+                'CH4': 300,      # Methane
+                'METHANOL': 400, # Methanol
+                'WATER': 1,      # Water
+                'default': 500   # Default price for unknown materials
+            }
+            
+            for stream_name, stream in feed_streams.items():
+                # Estimate material cost based on main component
+                main_component = self._identify_main_component(stream)
+                price_per_mt = material_prices.get(main_component.upper(), material_prices['default'])
+                
+                # Calculate annual cost
+                annual_consumption_mt = stream.mass_flow * 8760 / 1000  # Convert kg/hr to MT/year
+                annual_cost = annual_consumption_mt * price_per_mt
+                
+                material_item = CostItem(
+                    name=f"Raw Material - {stream_name}",
+                    category=CostCategory.RAW_MATERIALS,
+                    base_cost=annual_cost,
+                    currency=CurrencyType.USD,
+                    unit="MT/year",
+                    quantity=annual_consumption_mt,
+                    estimation_method="Feed stream analysis"
+                )
+                opex_data.add_opex_item(material_item)
+                
+        except Exception as e:
+            logger.warning(f"Error extracting raw material costs: {str(e)}")
+    
+    def _add_labor_costs(self, opex_data: OpexData, total_capex: float):
+        """
+        Add estimated labor costs
+        
+        Args:
+            opex_data: OPEX data structure to modify
+            total_capex: Total CAPEX for scaling labor costs
+        """
+        # Estimate labor requirements based on plant size
+        annual_labor_cost = max(total_capex * 0.02, 500000)  # 2% of CAPEX or minimum $500k
+        
+        labor_item = CostItem(
+            name="Operating Labor",
+            category=CostCategory.LABOR,
+            base_cost=annual_labor_cost,
+            currency=CurrencyType.USD,
+            unit="$/year",
+            estimation_method="Percentage of CAPEX"
+        )
+        opex_data.add_opex_item(labor_item)
+    
+    def _add_maintenance_costs(self, opex_data: OpexData, total_capex: float):
+        """
+        Add estimated maintenance costs
+        
+        Args:
+            opex_data: OPEX data structure to modify
+            total_capex: Total CAPEX for calculating maintenance costs
+        """
+        # Maintenance typically 3-5% of CAPEX annually
+        annual_maintenance_cost = total_capex * 0.04  # 4% of CAPEX
+        
+        maintenance_item = CostItem(
+            name="Maintenance & Repairs",
+            category=CostCategory.MAINTENANCE,
+            base_cost=annual_maintenance_cost,
+            currency=CurrencyType.USD,
+            unit="$/year",
+            estimation_method="Percentage of CAPEX"
+        )
+        opex_data.add_opex_item(maintenance_item)
+    
+    def _calculate_economic_indicators(self, results: EconomicAnalysisResults):
+        """
+        Calculate economic indicators (NPV, IRR, etc.)
+        
+        Args:
+            results: Economic analysis results to update
+        """
+        try:
+            # Calculate NPV
+            results.npv = results.financial_params.calculate_npv(
+                results.total_capex, 
+                results.annual_opex
+            )
+            
+            # Calculate production cost per unit
+            results.production_cost = results.calculate_production_cost()
+            
+            # Simple payback period
+            if results.annual_opex > 0:
+                annual_profit = results.financial_params.annual_revenue - results.annual_opex
+                if annual_profit > 0:
+                    results.payback_period = results.total_capex / annual_profit
+            
+            # Update results
+            results.irr = results.financial_params.irr or 0.0
+            
+        except Exception as e:
+            logger.warning(f"Error calculating economic indicators: {str(e)}")
+    
+    def _extract_equipment_for_costing(self) -> Dict[str, EquipmentSizeData]:
+        """
+        Extract equipment data formatted for costing analysis
+        
+        Returns:
+            Dictionary of equipment sizing data
+        """
+        equipment_list = {}
+        
+        try:
+            equipment_data = self.extract_all_equipment()
+            sizer = EquipmentSizer()
+            
+            for block_name, eq_data in equipment_data.items():
+                try:
+                    eq_type = eq_data.get('type', 'unknown')
+                    params = eq_data.get('parameters', {})
+                    
+                    # Convert to EquipmentType enum
+                    equipment_type = self._map_to_equipment_type(eq_type)
+                    
+                    # Create equipment sizing data
+                    sizing_data = EquipmentSizeData(
+                        equipment_type=equipment_type,
+                        name=block_name,
+                        volume=params.get('volume_m3'),
+                        area=params.get('area_m2'),
+                        diameter=params.get('diameter_m'),
+                        length=params.get('length_m'),
+                        height=params.get('height_m'),
+                        power_rating=params.get('power_kW'),
+                        design_pressure=params.get('pressure_bar'),
+                        design_temperature=params.get('temperature_C'),
+                        estimated_cost=self._estimate_equipment_cost(eq_type, params, block_name),
+                        cost_basis="2024 USD, installed"
+                    )
+                    
+                    equipment_list[block_name] = sizing_data
+                    
+                except Exception as e:
+                    logger.warning(f"Error processing equipment {block_name}: {str(e)}")
+        
+        except Exception as e:
+            logger.error(f"Error extracting equipment for costing: {str(e)}")
+        
+        return equipment_list
+    
+    def _identify_feed_streams(self, stream_data: Dict[str, StreamData]) -> Dict[str, StreamData]:
+        """Identify feed streams from stream data"""
+        feed_streams = {}
+        
+        for name, stream in stream_data.items():
+            # Simple heuristic: streams with "FEED", "IN", "INPUT" in name
+            if any(keyword in name.upper() for keyword in ['FEED', 'IN', 'INPUT']):
+                feed_streams[name] = stream
+        
+        return feed_streams
+    
+    def _identify_product_streams(self, stream_data: Dict[str, StreamData]) -> Dict[str, StreamData]:
+        """Identify product streams from stream data"""
+        product_streams = {}
+        
+        for name, stream in stream_data.items():
+            # Simple heuristic: streams with "PRODUCT", "OUT", "OUTPUT" in name
+            if any(keyword in name.upper() for keyword in ['PRODUCT', 'OUT', 'OUTPUT']):
+                product_streams[name] = stream
+        
+        return product_streams
+    
+    def _identify_main_component(self, stream: StreamData) -> str:
+        """Identify main component in a stream"""
+        if stream.composition:
+            # Find component with highest mole fraction
+            main_comp = max(stream.composition.items(), key=lambda x: x[1])
+            return main_comp[0]
+        return "UNKNOWN"
+    
+    def _map_to_equipment_type(self, eq_type_str: str) -> EquipmentType:
+        """Map equipment type string to EquipmentType enum"""
+        eq_type_upper = eq_type_str.upper()
+        
+        if 'REACTOR' in eq_type_upper:
+            return EquipmentType.REACTOR
+        elif 'PUMP' in eq_type_upper:
+            return EquipmentType.PUMP
+        elif 'COMPRESSOR' in eq_type_upper:
+            return EquipmentType.COMPRESSOR
+        elif 'HEAT' in eq_type_upper or 'HX' in eq_type_upper:
+            return EquipmentType.HEAT_EXCHANGER
+        elif 'COLUMN' in eq_type_upper or 'DISTIL' in eq_type_upper:
+            return EquipmentType.DISTILLATION_COLUMN
+        elif 'SEPARATOR' in eq_type_upper or 'FLASH' in eq_type_upper:
+            return EquipmentType.SEPARATOR
+        elif 'TANK' in eq_type_upper or 'VESSEL' in eq_type_upper:
+            return EquipmentType.TANK
+        else:
+            return EquipmentType.UNKNOWN
+    
+    # =================== Flowsheet Connection Methods ===================
+    
+    def load_flowsheet_connections(self, flowsheet_file: str = "aspen_flowsheet.xlsx") -> Dict[str, Dict[str, List[str]]]:
+        """
+        从Excel文件加载流股连接信息
+        
+        Args:
+            flowsheet_file: Excel文件路径
+            
+        Returns:
+            设备连接信息字典，格式: {设备名: {'inlet_streams': [], 'outlet_streams': []}}
+        """
+        self.flowsheet_connections = {}
+        
+        try:
+            if not os.path.exists(flowsheet_file):
+                logger.debug(f"Flowsheet file not found: {flowsheet_file}")
+                return self.flowsheet_connections
+                
+            logger.debug(f"Loading flowsheet connections from: {flowsheet_file}")
+            
+            # 读取Excel文件
+            df = pd.read_excel(flowsheet_file, sheet_name='Aspen Data Tables')
+            
+            # 解析连接信息
+            stream_connections = self.parse_excel_connections(df)
+            
+            # 构建设备连接关系
+            self.flowsheet_connections = self.build_equipment_connections(stream_connections)
+            
+            logger.debug(f"Loaded connections for {len(self.flowsheet_connections)} equipment items")
+            
+        except Exception as e:
+            logger.debug(f"Failed to load flowsheet connections: {str(e)}")
+            self.flowsheet_connections = {}
+        
+        return self.flowsheet_connections
+    
+    def parse_excel_connections(self, df) -> Dict[str, Dict[str, Optional[str]]]:
+        """
+        解析Excel中的连接信息
+        
+        Args:
+            df: Excel DataFrame
+            
+        Returns:
+            流股连接信息字典，格式: {流股名: {'from': 设备名, 'to': 设备名}}
+        """
+        stream_connections = {}
+        
+        try:
+            # 找到关键行
+            stream_name_row = None
+            from_row = None
+            to_row = None
+            
+            for idx, row in df.iterrows():
+                first_col_value = str(row.iloc[2]) if pd.notna(row.iloc[2]) else ""
+                
+                if first_col_value == "Stream Name":
+                    stream_name_row = idx
+                elif first_col_value == "From":
+                    from_row = idx
+                elif first_col_value == "To":
+                    to_row = idx
+            
+            if not all([stream_name_row is not None, from_row is not None, to_row is not None]):
+                logger.debug("Could not find required rows in flowsheet Excel")
+                return stream_connections
+            
+            # 提取流股连接信息
+            for col_idx in range(3, len(df.columns)):
+                stream_name = str(df.iloc[stream_name_row, col_idx]) if pd.notna(df.iloc[stream_name_row, col_idx]) else None
+                from_eq = str(df.iloc[from_row, col_idx]) if pd.notna(df.iloc[from_row, col_idx]) else None
+                to_eq = str(df.iloc[to_row, col_idx]) if pd.notna(df.iloc[to_row, col_idx]) else None
+                
+                # 过滤掉无效数据
+                if stream_name and stream_name != 'nan' and stream_name != '':
+                    stream_connections[stream_name] = {
+                        'from': from_eq if from_eq and from_eq != 'nan' else None,
+                        'to': to_eq if to_eq and to_eq != 'nan' else None
+                    }
+            
+            logger.debug(f"Parsed {len(stream_connections)} stream connections")
+            
+        except Exception as e:
+            logger.debug(f"Error parsing Excel connections: {str(e)}")
+        
+        return stream_connections
+    
+    def build_equipment_connections(self, stream_connections: Dict[str, Dict[str, Optional[str]]]) -> Dict[str, Dict[str, List[str]]]:
+        """
+        构建设备连接关系
+        
+        Args:
+            stream_connections: 流股连接信息
+            
+        Returns:
+            设备连接信息字典
+        """
+        equipment_connections = {}
+        
+        try:
+            # 收集所有设备
+            all_equipment = set()
+            for stream_info in stream_connections.values():
+                if stream_info['from']:
+                    all_equipment.add(stream_info['from'])
+                if stream_info['to']:
+                    all_equipment.add(stream_info['to'])
+            
+            # 为每个设备创建连接信息
+            for equipment in all_equipment:
+                equipment_connections[equipment] = {
+                    'inlet_streams': [],
+                    'outlet_streams': []
+                }
+            
+            # 填充连接信息
+            for stream_name, stream_info in stream_connections.items():
+                from_eq = stream_info['from']
+                to_eq = stream_info['to']
+                
+                # 对于源设备，这是出料流股
+                if from_eq and from_eq in equipment_connections:
+                    equipment_connections[from_eq]['outlet_streams'].append(stream_name)
+                
+                # 对于目标设备，这是进料流股
+                if to_eq and to_eq in equipment_connections:
+                    equipment_connections[to_eq]['inlet_streams'].append(stream_name)
+            
+            logger.debug(f"Built connections for {len(equipment_connections)} equipment items")
+            
+        except Exception as e:
+            logger.debug(f"Error building equipment connections: {str(e)}")
+        
+        return equipment_connections
+    
+    def get_equipment_stream_connections_from_excel(self, block_name: str) -> Tuple[List[str], List[str]]:
+        """
+        从Excel连接信息中获取设备的进出料流股
+        
+        Args:
+            block_name: 设备名称
+            
+        Returns:
+            (inlet_streams, outlet_streams): 进料和出料流股列表
+        """
+        if not hasattr(self, 'flowsheet_connections') or not self.flowsheet_connections:
+            # 尝试加载连接信息
+            self.load_flowsheet_connections()
+        
+        if block_name in self.flowsheet_connections:
+            connections = self.flowsheet_connections[block_name]
+            return connections['inlet_streams'], connections['outlet_streams']
+        
+        return [], []
 
 
 class EquipmentSizer:
@@ -1288,14 +2045,7 @@ class HeatExchangerDataLoader:
             'hot_composition': [],
             'cold_composition': [],
             'generic_flow': [],
-            'generic_stream': [],
-            # I-N column positional mappings
-            'column_i': [],
-            'column_j': [],
-            'column_k': [],
-            'column_l': [],
-            'column_m': [],
-            'column_n': []
+            'generic_stream': []
         }
         
         # Enhanced keyword patterns with Chinese support and variations
@@ -1348,28 +2098,28 @@ class HeatExchangerDataLoader:
             'hot_inlet_temp': [
                 # English
                 'hot_in', 'hot_inlet', 'shell_in', 'shell_inlet', 'h_in', 'hot_temp_in',
-                'hot_in_temp', 'shell_in_temp', 'hot_inlet_temperature',
+                'hot_in_temp', 'shell_in_temp', 'hot_inlet_temperature', 'hot t in',
                 # Chinese
                 '热进', '热入口', '壳程进口', '热侧进口'
             ],
             'hot_outlet_temp': [
                 # English
                 'hot_out', 'hot_outlet', 'shell_out', 'shell_outlet', 'h_out', 'hot_temp_out',
-                'hot_out_temp', 'shell_out_temp', 'hot_outlet_temperature',
+                'hot_out_temp', 'shell_out_temp', 'hot_outlet_temperature', 'hot t out',
                 # Chinese
                 '热出', '热出口', '壳程出口', '热侧出口'
             ],
             'cold_inlet_temp': [
                 # English
                 'cold_in', 'cold_inlet', 'tube_in', 'tube_inlet', 'c_in', 'cold_temp_in',
-                'cold_in_temp', 'tube_in_temp', 'cold_inlet_temperature',
+                'cold_in_temp', 'tube_in_temp', 'cold_inlet_temperature', 'cold t in',
                 # Chinese
                 '冷进', '冷入口', '管程进口', '冷侧进口'
             ],
             'cold_outlet_temp': [
                 # English
                 'cold_out', 'cold_outlet', 'tube_out', 'tube_outlet', 'c_out', 'cold_temp_out',
-                'cold_out_temp', 'tube_out_temp', 'cold_outlet_temperature',
+                'cold_out_temp', 'tube_out_temp', 'cold_outlet_temperature', 'cold t out',
                 # Chinese
                 '冷出', '冷出口', '管程出口', '冷侧出口'
             ],
@@ -1465,46 +2215,7 @@ class HeatExchangerDataLoader:
                 # Short columns with numbers (likely equipment names)
                 mappings['equipment_name'].append(col)
         
-        # Strategy 4: I-N Column Positional Detection (Columns 8-13, 0-indexed)
-        if len(columns) >= 14:  # Ensure we have at least columns up to N
-            column_i_to_n_mapping = {
-                8: 'column_i',   # Column I (9th column, 0-indexed 8)
-                9: 'column_j',   # Column J (10th column, 0-indexed 9)
-                10: 'column_k',  # Column K (11th column, 0-indexed 10)
-                11: 'column_l',  # Column L (12th column, 0-indexed 11)
-                12: 'column_m',  # Column M (13th column, 0-indexed 12)
-                13: 'column_n'   # Column N (14th column, 0-indexed 13)
-            }
-            
-            for col_idx, category in column_i_to_n_mapping.items():
-                if col_idx < len(columns):
-                    col_name = columns[col_idx]
-                    mappings[category].append(col_name)
-                    
-                    # Also try to map to appropriate data type based on position
-                    # Columns I-L typically temperatures, M-N typically flows
-                    if col_idx <= 11:  # I-L (temperature columns)
-                        if col_idx in [8, 10]:  # I, K (inlet temperatures)
-                            if col_idx == 8:  # I - Hot inlet
-                                mappings['hot_inlet_temp'].append(col_name)
-                            else:  # K - Cold inlet
-                                mappings['cold_inlet_temp'].append(col_name)
-                        else:  # J, L (outlet temperatures)
-                            if col_idx == 9:  # J - Hot outlet
-                                mappings['hot_outlet_temp'].append(col_name)
-                            else:  # L - Cold outlet
-                                mappings['cold_outlet_temp'].append(col_name)
-                        mappings['temperature'].append(col_name)
-                    else:  # M-N (flow columns)
-                        if col_idx == 12:  # M - Hot flow
-                            mappings['hot_flow'].append(col_name)
-                        else:  # N - Cold flow
-                            mappings['cold_flow'].append(col_name)
-                        mappings['generic_flow'].append(col_name)
-                    
-                    self.extraction_log.append(f"Positional mapping: Column {col_name} (pos {col_idx}) -> {category}")
-        
-        # Strategy 5: Remove duplicates and sort by relevance
+        # Strategy 4: Remove duplicates and sort by relevance
         for category in mappings:
             mappings[category] = list(dict.fromkeys(mappings[category]))  # Remove duplicates while preserving order
         
@@ -1513,12 +2224,6 @@ class HeatExchangerDataLoader:
         total_columns = len(columns)
         
         self.extraction_log.append(f"Column mapping: {total_mapped}/{total_columns} columns mapped")
-        
-        # Log I-N column detection specifically
-        i_to_n_detected = [category for category in ['column_i', 'column_j', 'column_k', 'column_l', 'column_m', 'column_n'] 
-                          if mappings[category]]
-        if i_to_n_detected:
-            self.extraction_log.append(f"I-N columns detected: {i_to_n_detected}")
         
         # Add unmapped columns to log for debugging
         mapped_columns = set()
@@ -1651,32 +2356,14 @@ class HeatExchangerDataLoader:
             hot_flow_cols = column_mappings.get('hot_flow', [])
             cold_flow_cols = column_mappings.get('cold_flow', [])
             
-            hot_comp_cols = column_mappings.get('hot_composition', [])
-            cold_comp_cols = column_mappings.get('cold_composition', [])
-            
-            # I-N column mappings for enhanced data extraction
-            column_i_cols = column_mappings.get('column_i', [])
-            column_j_cols = column_mappings.get('column_j', [])
-            column_k_cols = column_mappings.get('column_k', [])
-            column_l_cols = column_mappings.get('column_l', [])
-            column_m_cols = column_mappings.get('column_m', [])
-            column_n_cols = column_mappings.get('column_n', [])
+            hot_flow_cols = column_mappings.get('hot_flow', [])
+            cold_flow_cols = column_mappings.get('cold_flow', [])
             
             # Log discovered column mappings
             logger.info("🔍 Enhanced Column Detection Results:")
             for category, columns in column_mappings.items():
                 if columns:
                     logger.info(f"   {category}: {columns}")
-            
-            # Log I-N column detection specifically
-            i_to_n_cols = {
-                'I': column_i_cols, 'J': column_j_cols, 'K': column_k_cols,
-                'L': column_l_cols, 'M': column_m_cols, 'N': column_n_cols
-            }
-            detected_i_to_n = {k: v for k, v in i_to_n_cols.items() if v}
-            if detected_i_to_n:
-                logger.info(f"📍 I-N Columns Detected: {detected_i_to_n}")
-                self.extraction_log.append(f"I-N columns detected: {list(detected_i_to_n.keys())}")
             
             # Log extraction statistics
             self.extraction_log.append(f"Column mappings found: {sum(len(cols) for cols in column_mappings.values())} total")
@@ -1691,34 +2378,15 @@ class HeatExchangerDataLoader:
                     'name': f"HEX-{idx:03d}",
                     'duty': 0.0,
                     'area': 0.0,
-                    'temperatures': {},
-                    'pressures': {},
-                    # Enhanced: Hot stream data
-                    'hot_stream_name': None,
+                    # Simplified: Direct stream mapping
+                    'hot_stream_name': None,    # Will be mapped to inlet_streams
+                    'cold_stream_name': None,   # Will be mapped to outlet_streams
                     'hot_stream_inlet_temp': None,
                     'hot_stream_outlet_temp': None,
-                    'hot_stream_flow_rate': None,
-                    'hot_stream_composition': {},
-                    # Enhanced: Cold stream data
-                    'cold_stream_name': None,
                     'cold_stream_inlet_temp': None,
                     'cold_stream_outlet_temp': None,
-                    'cold_stream_flow_rate': None,
-                    'cold_stream_composition': {},
-                    # Enhanced: I-N column data
-                    'column_i_data': None,
-                    'column_i_header': None,
-                    'column_j_data': None,
-                    'column_j_header': None,
-                    'column_k_data': None,
-                    'column_k_header': None,
-                    'column_l_data': None,
-                    'column_l_header': None,
-                    'column_m_data': None,
-                    'column_m_header': None,
-                    'column_n_data': None,
-                    'column_n_header': None,
-                    'columns_i_to_n_raw': {}
+                    'temperatures': [],
+                    'pressures': []
                 }
                 
                 # Enhanced data extraction with robust conversion
@@ -1778,9 +2446,23 @@ class HeatExchangerDataLoader:
                     if pd.notna(pres_val) and isinstance(pres_val, (int, float)):
                         hex_info['pressures'][pres_col] = float(pres_val)
                 
-                # Enhanced: Extract hot stream data
+                # Enhanced: Extract hot stream data with better column selection
                 if hot_stream_name_cols:
-                    hot_name_val = row[hot_stream_name_cols[0]]
+                    # 优先选择包含"stream"的列名，然后是包含"hot"的列名
+                    best_hot_col = None
+                    for col in hot_stream_name_cols:
+                        if 'stream' in col.lower():
+                            best_hot_col = col
+                            break
+                    if not best_hot_col:
+                        for col in hot_stream_name_cols:
+                            if 'hot' in col.lower():
+                                best_hot_col = col
+                                break
+                    if not best_hot_col:
+                        best_hot_col = hot_stream_name_cols[0]
+                    
+                    hot_name_val = row[best_hot_col]
                     if pd.notna(hot_name_val):
                         hex_info['hot_stream_name'] = str(hot_name_val)
                 
@@ -1799,21 +2481,23 @@ class HeatExchangerDataLoader:
                     if pd.notna(hot_flow_val) and isinstance(hot_flow_val, (int, float)):
                         hex_info['hot_stream_flow_rate'] = float(hot_flow_val)
                 
-                if hot_comp_cols:
-                    hot_comp_val = row[hot_comp_cols[0]]
-                    if pd.notna(hot_comp_val):
-                        try:
-                            # Try to parse as JSON if it's a string
-                            if isinstance(hot_comp_val, str):
-                                hex_info['hot_stream_composition'] = json.loads(hot_comp_val)
-                            else:
-                                hex_info['hot_stream_composition'] = {'main_component': str(hot_comp_val)}
-                        except:
-                            hex_info['hot_stream_composition'] = {'main_component': str(hot_comp_val)}
-                
-                # Enhanced: Extract cold stream data
+                # Enhanced: Extract cold stream data with better column selection
                 if cold_stream_name_cols:
-                    cold_name_val = row[cold_stream_name_cols[0]]
+                    # 优先选择包含"stream"的列名，然后是包含"cold"的列名
+                    best_cold_col = None
+                    for col in cold_stream_name_cols:
+                        if 'stream' in col.lower():
+                            best_cold_col = col
+                            break
+                    if not best_cold_col:
+                        for col in cold_stream_name_cols:
+                            if 'cold' in col.lower():
+                                best_cold_col = col
+                                break
+                    if not best_cold_col:
+                        best_cold_col = cold_stream_name_cols[0]
+                    
+                    cold_name_val = row[best_cold_col]
                     if pd.notna(cold_name_val):
                         hex_info['cold_stream_name'] = str(cold_name_val)
                 
@@ -1832,97 +2516,17 @@ class HeatExchangerDataLoader:
                     if pd.notna(cold_flow_val) and isinstance(cold_flow_val, (int, float)):
                         hex_info['cold_stream_flow_rate'] = float(cold_flow_val)
                 
-                if cold_comp_cols:
-                    cold_comp_val = row[cold_comp_cols[0]]
-                    if pd.notna(cold_comp_val):
-                        try:
-                            # Try to parse as JSON if it's a string
-                            if isinstance(cold_comp_val, str):
-                                hex_info['cold_stream_composition'] = json.loads(cold_comp_val)
-                            else:
-                                hex_info['cold_stream_composition'] = {'main_component': str(cold_comp_val)}
-                        except:
-                            hex_info['cold_stream_composition'] = {'main_component': str(cold_comp_val)}
+                # Store stream connections for database
+                inlet_streams = []
+                outlet_streams = []
                 
-                # Enhanced: Extract I-N column data with comprehensive logging
-                i_to_n_extraction_count = 0
+                if hex_info['hot_stream_name']:
+                    inlet_streams.append(hex_info['hot_stream_name'])
+                if hex_info['cold_stream_name']:
+                    outlet_streams.append(hex_info['cold_stream_name'])
                 
-                # Column I extraction
-                if column_i_cols:
-                    col_name = column_i_cols[0]
-                    if col_name in row.index:
-                        col_val = self._safe_numeric_conversion(row[col_name], col_name)
-                        if col_val is not None:
-                            hex_info['column_i_data'] = col_val
-                            hex_info['column_i_header'] = col_name
-                            hex_info['columns_i_to_n_raw']['I'] = col_val
-                            i_to_n_extraction_count += 1
-                            extraction_success = True
-                
-                # Column J extraction
-                if column_j_cols:
-                    col_name = column_j_cols[0]
-                    if col_name in row.index:
-                        col_val = self._safe_numeric_conversion(row[col_name], col_name)
-                        if col_val is not None:
-                            hex_info['column_j_data'] = col_val
-                            hex_info['column_j_header'] = col_name
-                            hex_info['columns_i_to_n_raw']['J'] = col_val
-                            i_to_n_extraction_count += 1
-                            extraction_success = True
-                
-                # Column K extraction
-                if column_k_cols:
-                    col_name = column_k_cols[0]
-                    if col_name in row.index:
-                        col_val = self._safe_numeric_conversion(row[col_name], col_name)
-                        if col_val is not None:
-                            hex_info['column_k_data'] = col_val
-                            hex_info['column_k_header'] = col_name
-                            hex_info['columns_i_to_n_raw']['K'] = col_val
-                            i_to_n_extraction_count += 1
-                            extraction_success = True
-                
-                # Column L extraction
-                if column_l_cols:
-                    col_name = column_l_cols[0]
-                    if col_name in row.index:
-                        col_val = self._safe_numeric_conversion(row[col_name], col_name)
-                        if col_val is not None:
-                            hex_info['column_l_data'] = col_val
-                            hex_info['column_l_header'] = col_name
-                            hex_info['columns_i_to_n_raw']['L'] = col_val
-                            i_to_n_extraction_count += 1
-                            extraction_success = True
-                
-                # Column M extraction
-                if column_m_cols:
-                    col_name = column_m_cols[0]
-                    if col_name in row.index:
-                        col_val = self._safe_numeric_conversion(row[col_name], col_name)
-                        if col_val is not None:
-                            hex_info['column_m_data'] = col_val
-                            hex_info['column_m_header'] = col_name
-                            hex_info['columns_i_to_n_raw']['M'] = col_val
-                            i_to_n_extraction_count += 1
-                            extraction_success = True
-                
-                # Column N extraction
-                if column_n_cols:
-                    col_name = column_n_cols[0]
-                    if col_name in row.index:
-                        col_val = self._safe_numeric_conversion(row[col_name], col_name)
-                        if col_val is not None:
-                            hex_info['column_n_data'] = col_val
-                            hex_info['column_n_header'] = col_name
-                            hex_info['columns_i_to_n_raw']['N'] = col_val
-                            i_to_n_extraction_count += 1
-                            extraction_success = True
-                
-                # Log I-N column extraction results
-                if i_to_n_extraction_count > 0:
-                    self.extraction_log.append(f"Row {idx} I-N extraction: {i_to_n_extraction_count}/6 columns extracted")
-                    logger.debug(f"Row {idx}: Extracted {i_to_n_extraction_count} I-N columns: {list(hex_info['columns_i_to_n_raw'].keys())}")
+                hex_info['inlet_streams'] = inlet_streams
+                hex_info['outlet_streams'] = outlet_streams
                 
                 # Enhanced: Validate temperature and flow consistency (non-blocking) 
                 validation_warnings = self._validate_hex_data(hex_info)
@@ -1939,10 +2543,6 @@ class HeatExchangerDataLoader:
                     data_indicators.append(f"duty={hex_info['duty']:.1f}")
                 if hex_info['area'] != 0.0:
                     data_indicators.append(f"area={hex_info['area']:.1f}")
-                if hex_info['temperatures']:
-                    data_indicators.append(f"temps={len(hex_info['temperatures'])}")
-                if hex_info['pressures']:
-                    data_indicators.append(f"pressures={len(hex_info['pressures'])}")
                 if hex_info['hot_stream_name']:
                     data_indicators.append("hot_stream")
                 if hex_info['cold_stream_name']:
@@ -1956,8 +2556,6 @@ class HeatExchangerDataLoader:
                 should_include = (
                     # Any basic heat exchanger data
                     extraction_success or
-                    # Any temperature data
-                    hex_info['temperatures'] or
                     # Any stream names
                     hex_info['hot_stream_name'] or hex_info['cold_stream_name'] or
                     # Any temperature values
@@ -2112,6 +2710,7 @@ class AspenDataExtractor:
         self.hex_loader = None
         self.stream_data = {}
         self.block_data = {}
+        self.equipment_connections = {}  # Store stream connections separately
         
         # Initialize stream classifier if available
         if STREAM_CLASSIFICATION_AVAILABLE:
@@ -2911,6 +3510,16 @@ class AspenDataExtractor:
                     display_name = self.com_interface.get_equipment_display_name(block_name)
                     equipment_info["custom_name"] = display_name
                     
+                    # Add stream connections for database storage
+                    try:
+                        inlet_streams, outlet_streams = self.com_interface.get_equipment_stream_connections_from_excel(block_name)
+                        equipment_info["inlet_streams"] = inlet_streams
+                        equipment_info["outlet_streams"] = outlet_streams
+                    except Exception as e:
+                        logger.debug(f"Could not get stream connections for {block_name}: {str(e)}")
+                        equipment_info["inlet_streams"] = []
+                        equipment_info["outlet_streams"] = []
+                    
                     equipment[block_name] = equipment_info
                     logger.info(f"✅ Extracted {block_name}: {equipment_type} with {len(parameters)} parameters {'(Excel specified)' if equipment_info.get('excel_specified') else ''}")
                     
@@ -2920,6 +3529,9 @@ class AspenDataExtractor:
             self.block_data = equipment
             logger.info(f"✅ Successfully extracted {len(equipment)} equipment items")
             
+            # Collect stream connections separately (doesn't affect database)
+            self._collect_equipment_connections(equipment)
+            
             # Print equipment summary
             self._print_equipment_summary(equipment)
             
@@ -2928,6 +3540,43 @@ class AspenDataExtractor:
         except Exception as e:
             logger.error(f"Failed to extract equipment data: {str(e)}")
             return equipment
+    
+    def _collect_equipment_connections(self, equipment: Dict[str, Any]):
+        """Collect stream connection information separately from main equipment data"""
+        self.equipment_connections = {}
+        
+        for block_name in equipment.keys():
+            try:
+                inlet_streams, outlet_streams = self.com_interface.get_equipment_stream_connections_from_excel(block_name)
+                self.equipment_connections[block_name] = {
+                    'inlet_streams': inlet_streams,
+                    'outlet_streams': outlet_streams
+                }
+            except Exception as e:
+                logger.debug(f"Could not get stream connections for {block_name}: {str(e)}")
+                self.equipment_connections[block_name] = {
+                    'inlet_streams': [],
+                    'outlet_streams': []
+                }
+        
+        logger.info(f"✅ Collected stream connections for {len(self.equipment_connections)} equipment items")
+    
+    def get_equipment_stream_connections(self, equipment_name: str = None):
+        """Get stream connection information for equipment
+        
+        Args:
+            equipment_name (str, optional): Specific equipment name. If None, returns all connections.
+            
+        Returns:
+            dict: Stream connection information
+        """
+        if equipment_name:
+            return self.equipment_connections.get(equipment_name, {
+                'inlet_streams': [],
+                'outlet_streams': []
+            })
+        else:
+            return self.equipment_connections
     
     def _map_aspen_block_type(self, aspen_type: str) -> str:
         """Map Aspen block type to equipment type"""
@@ -3189,7 +3838,13 @@ class AspenDataExtractor:
         
         logger.info("\nDetailed Equipment List:")
         for eq_name, eq_data in equipment.items():
-            logger.info(f"  {eq_name}: {eq_data['type']} "
+            # 构建流股连接信息显示
+            connections = self.equipment_connections.get(eq_name, {})
+            inlet_streams = connections.get('inlet_streams', [])
+            outlet_streams = connections.get('outlet_streams', [])
+            stream_info = f"[{len(inlet_streams)}→{len(outlet_streams)}]"
+            
+            logger.info(f"  {eq_name}: {eq_data['type']} {stream_info} "
                        f"({eq_data.get('aspen_type', 'Unknown')}) "
                        f"- {eq_data.get('parameter_count', 0)} params")
         

@@ -1,0 +1,117 @@
+2025-07-27 14:52:06,705 - INFO -    总设备数: 17
+2025-07-27 14:52:06,707 - INFO -    映射设备: ['COOL2', 'HT8', 'HT9', 'S2', 'S3', 'MC1', 'V3', 'C-301', 'DI', 'B1', 'MEOH', 'B11', 'MIX3', 'MX1', 'MX2', 'F1', 'U-1']
+2025-07-27 14:52:06,709 - INFO - Database tables created successfully with I-N column support
+2025-07-27 14:52:10,553 - INFO - COM测试结果: {'pywin32_available': True, 'com_objects_found': ['Apwn.Document'], 'platform': 'win32', 'recommendations': []}
+2025-07-27 14:52:10,554 - INFO - 找到Aspen文件: aspen_files/BFG-CO2H-MEOH V2 (purge burning).apw
+2025-07-27 14:52:10,554 - INFO - Attempting to connect to Aspen Plus...
+2025-07-27 14:52:10,555 - INFO - Trying COM object: Apwn.Document
+2025-07-27 14:52:13,893 - WARNING - Could not configure app settings: (-2147352567, '发生意外。', (2002, 'Aspen Plus 40.0 OLE Services', 'Application has not been initialized or has been closed since the last initialization. InitNew or InitFromFile must be  called before this property or method may be executed.', None, 0, 0), None)
+2025-07-27 14:52:13,894 - INFO - Attempting to open file: C:\Users\61723\Downloads\Aspen-data-extractor-main\Aspen-data-extractor-main\aspen_files\BFG-CO2H-MEOH V2 (purge burning).apw
+2025-07-27 14:52:13,894 - INFO - Trying initialization method: InitFromArchive2
+2025-07-27 14:52:17,155 - INFO - 提取流股数据...
+2025-07-27 14:52:17,155 - INFO - Extracting all stream data from Aspen Plus...
+2025-07-27 14:52:17,323 - INFO - Extracted stream: AF-COM - T:150.0°C, P:1.0bar - 原料
+2025-07-27 14:52:17,362 - INFO - Extracted stream: AIR - T:25.0°C, P:1.0bar - 原料
+2025-07-27 14:52:17,403 - INFO - Extracted stream: BFG - T:125.0°C, P:1.0bar - 原料
+2025-07-27 14:52:17,444 - INFO - Extracted stream: CS1 - T:41.4°C, P:1.6bar - 过程
+2025-07-27 14:52:17,486 - INFO - Extracted stream: FLUEGAS1 - T:31.7°C, P:1.4bar - 过程
+2025-07-27 14:52:17,526 - INFO - Extracted stream: GASOUT1 - T:41.4°C, P:1.6bar - 过程
+2025-07-27 14:52:17,572 - INFO - Extracted stream: H2IN - T:25.0°C, P:1.0bar - 过程
+2025-07-27 14:52:17,624 - INFO - Extracted stream: LIGHTEND - T:45.0°C, P:1.4bar - 产品
+2025-07-27 14:52:17,679 - INFO - Extracted stream: MEOH1 - T:221.9°C, P:70.0bar - 产品
+2025-07-27 14:52:17,736 - INFO - Extracted stream: MEOH2 - T:220.0°C, P:70.0bar - 产品
+2025-07-27 14:52:17,801 - INFO - Extracted stream: MEOH3 - T:220.1°C, P:69.1bar - 产品
+2025-07-27 14:52:17,859 - INFO - Extracted stream: MEOH4 - T:40.0°C, P:70.0bar - 产品
+2025-07-27 14:52:17,904 - INFO - Extracted stream: MEOH5 - T:40.0°C, P:70.0bar - 产品
+2025-07-27 14:52:17,958 - INFO - Extracted stream: MEOH6 - T:40.0°C, P:70.0bar - 产品
+2025-07-27 14:52:18,011 - INFO - Extracted stream: MEOH7 - T:220.0°C, P:70.0bar - 产品
+2025-07-27 14:52:18,059 - INFO - Extracted stream: P1 - T:40.0°C, P:70.0bar - 原料
+2025-07-27 14:52:18,108 - INFO - Extracted stream: PUR2 - T:40.0°C, P:70.0bar - 产品
+2025-07-27 14:52:18,156 - INFO - Extracted stream: PUR3 - T:41.4°C, P:1.6bar - 产品
+2025-07-27 14:52:18,204 - INFO - Extracted stream: PUR4 - T:41.4°C, P:1.6bar - 产品
+2025-07-27 14:52:18,253 - INFO - Extracted stream: REF4 - T:78.2°C, P:1.0bar - 原料
+2025-07-27 14:52:18,297 - INFO - Extracted stream: REF6 - T:248.0°C, P:70.0bar - 过程
+2025-07-27 14:52:18,340 - INFO - Extracted stream: S1 - T:80.5°C, P:1.7bar - 过程
+2025-07-27 14:52:18,382 - INFO - Extracted stream: SS2 - T:96.9°C, P:1.7bar - 过程
+2025-07-27 14:52:18,425 - INFO - Extracted stream: SS3 - T:72.7°C, P:1.4bar - 产品
+2025-07-27 14:52:18,427 - INFO - 
+============================================================
+2025-07-27 14:52:18,428 - INFO - ============================================================
+2025-07-27 14:52:18,428 - INFO - Total streams: 24
+2025-07-27 14:52:18,428 - INFO - Classified streams: 24
+2025-07-27 14:52:18,428 - INFO - 
+按分类统计:
+2025-07-27 14:52:18,428 - INFO -   产品: 12 (50.0%)
+2025-07-27 14:52:18,428 - INFO -   原料: 5 (20.8%)
+2025-07-27 14:52:18,428 - INFO -   过程: 7 (29.2%)
+2025-07-27 14:52:18,428 - INFO - 
+详细分类:
+2025-07-27 14:52:18,428 - INFO - 
+产品:
+2025-07-27 14:52:18,442 - INFO - 
+原料:
+2025-07-27 14:52:18,447 - INFO - 
+过程:
+2025-07-27 14:52:18,455 - INFO - ============================================================
+2025-07-27 14:52:18,456 - INFO - 提取设备数据...
+2025-07-27 14:52:18,456 - INFO - Extracting all equipment data from Aspen Plus...
+2025-07-27 14:52:18,496 - INFO - Found 16 equipment blocks
+2025-07-27 14:52:39,091 - INFO - 
+============================================================
+2025-07-27 14:52:39,091 - INFO - EQUIPMENT EXTRACTION SUMMARY
+2025-07-27 14:52:39,091 - INFO - ============================================================
+2025-07-27 14:52:39,092 - INFO - Total Equipment: 16
+2025-07-27 14:52:39,092 - INFO - Total Parameters: 19
+2025-07-27 14:52:39,092 - INFO - Total Stream Connections: 6 inlet, 0 outlet
+2025-07-27 14:52:39,092 - INFO - 
+Equipment by Type:
+2025-07-27 14:52:39,092 - INFO -   Compressor: 1
+2025-07-27 14:52:39,092 - INFO -   Distillation Column: 2
+2025-07-27 14:52:39,092 - INFO -   Heat Exchanger: 3
+2025-07-27 14:52:39,092 - INFO -   Mixer: 4
+2025-07-27 14:52:39,092 - INFO -   Reactor: 2
+2025-07-27 14:52:39,092 - INFO -   Separator: 2
+2025-07-27 14:52:39,092 - INFO -   Splitter: 1
+2025-07-27 14:52:39,092 - INFO -   Valve: 1
+2025-07-27 14:52:39,093 - INFO - 
+Stream Connection Summary:
+2025-07-27 14:52:39,093 - INFO -   C-301: 2 inlet, 0 outlet streams
+2025-07-27 14:52:39,093 - INFO -   DI: 2 inlet, 0 outlet streams
+2025-07-27 14:52:39,093 - INFO -   MC1: 1 inlet, 0 outlet streams
+2025-07-27 14:52:39,093 - INFO -   V3: 1 inlet, 0 outlet streams
+2025-07-27 14:52:39,093 - INFO - 
+Detailed Equipment List:
+2025-07-27 14:52:39,109 - INFO - ============================================================
+2025-07-27 14:52:39,156 - INFO - 测试 16 个设备的流股连接...
+2025-07-27 14:52:39,157 - INFO - [1/16] 测试设备: B1
+2025-07-27 14:52:39,980 - INFO - [2/16] 测试设备: B11
+2025-07-27 14:52:40,447 - INFO - [3/16] 测试设备: C-301
+2025-07-27 14:52:45,577 - INFO - [4/16] 测试设备: COOL2
+2025-07-27 14:52:46,240 - INFO - [5/16] 测试设备: DI
+2025-07-27 14:52:51,208 - INFO - [6/16] 测试设备: F1
+2025-07-27 14:52:51,758 - INFO - [7/16] 测试设备: HT8
+2025-07-27 14:52:52,428 - INFO - [8/16] 测试设备: HT9
+2025-07-27 14:52:53,128 - INFO - [9/16] 测试设备: MC1
+2025-07-27 14:52:54,240 - INFO - [10/16] 测试设备: MEOH
+2025-07-27 14:52:55,491 - INFO - [11/16] 测试设备: MIX3
+2025-07-27 14:52:55,938 - INFO - [12/16] 测试设备: MX1
+2025-07-27 14:52:56,383 - INFO - [13/16] 测试设备: MX2
+2025-07-27 14:52:56,819 - INFO - [14/16] 测试设备: S2
+2025-07-27 14:52:57,571 - INFO - [15/16] 测试设备: S3
+2025-07-27 14:52:58,323 - INFO - [16/16] 测试设备: V3
+2025-07-27 14:52:58,902 - INFO -   - 总设备数: 16
+2025-07-27 14:52:58,903 - INFO -   - 有连接的设备: 4
+2025-07-27 14:52:58,903 - INFO -   - 总进料流股: 6
+2025-07-27 14:52:58,903 - INFO -   - 总出料流股: 0
+2025-07-27 14:52:58,904 - INFO - 验证完成:
+2025-07-27 14:52:58,904 - INFO -   - 总验证数: 16
+2025-07-27 14:52:58,904 - INFO -   - 通过验证: 4
+2025-07-27 14:52:58,904 - INFO -   - 失败验证: 12
+2025-07-27 14:52:58,904 - INFO -   - 成功率: 25.0%
+2025-07-27 14:52:58,904 - WARNING - 发现 16 个警告
+2025-07-27 14:52:58,904 - WARNING -   - B1: 没有流股连接
+2025-07-27 14:52:58,904 - WARNING -   - B11: 没有流股连接
+2025-07-27 14:52:58,905 - WARNING -   - C-301: 只有进料，没有出料
+2025-07-27 14:52:58,905 - WARNING -   - COOL2: 没有流股连接
+2025-07-27 14:52:58,905 - WARNING -   - DI: 只有进料，没有出料
+2025-07-27 14:52:58,913 - INFO - Closed Aspen Plus application

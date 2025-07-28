@@ -1,0 +1,217 @@
+{
+  "output_directory": "economic_reports",
+  "default_currency": "USD",
+  "default_basis_year": 2024,
+  
+  "cost_factors": {
+    "installation_factor": 2.5,
+    "engineering_rate": 0.12,
+    "construction_rate": 0.08,
+    "contingency_rate": 0.15,
+    
+    "material_factors": {
+      "carbon_steel": 1.0,
+      "ss304": 2.1,
+      "ss316": 2.8,
+      "hastelloy_c": 8.5,
+      "inconel": 12.0,
+      "titanium": 15.0
+    },
+    
+    "location_factors": {
+      "us_gulf_coast": 1.0,
+      "us_west_coast": 1.25,
+      "europe_western": 1.35,
+      "asia_southeast": 0.75,
+      "china_eastern": 0.65
+    }
+  },
+  
+  "financial_parameters": {
+    "project_life": 20,
+    "construction_period": 2,
+    "startup_period": 1,
+    "discount_rate": 0.10,
+    "tax_rate": 0.25,
+    "depreciation_method": "straight_line",
+    "depreciation_life": 10,
+    "working_capital_rate": 0.05
+  },
+  
+  "opex_parameters": {
+    "maintenance_rate": 0.04,
+    "insurance_rate": 0.005,
+    "property_tax_rate": 0.02,
+    "labor_rate": 0.02,
+    "operating_hours": 8760
+  },
+  
+  "utility_prices": {
+    "electricity": 0.08,
+    "steam_low_pressure": 25.0,
+    "steam_medium_pressure": 28.0,
+    "steam_high_pressure": 32.0,
+    "cooling_water": 0.05,
+    "process_water": 0.5,
+    "fuel_gas": 8.0,
+    "compressed_air": 0.02,
+    "nitrogen": 0.15
+  },
+  
+  "raw_material_prices": {
+    "hydrogen": 2000,
+    "carbon_monoxide": 500,
+    "carbon_dioxide": 100,
+    "methane": 300,
+    "methanol": 400,
+    "ethanol": 600,
+    "water": 1,
+    "sodium_hydroxide": 800,
+    "sulfuric_acid": 300,
+    "default": 500
+  },
+  
+  "equipment_costing": {
+    "minimum_cost": 5000,
+    "cost_basis_year": 2024,
+    
+    "cost_correlations": {
+      "reactor": {
+        "base_cost": 50000,
+        "scaling_factor": 0.6,
+        "size_parameter": "volume_m3"
+      },
+      "pump": {
+        "base_cost": 5000,
+        "scaling_factor": 0.7,
+        "size_parameter": "power_kW"
+      },
+      "compressor": {
+        "base_cost": 15000,
+        "scaling_factor": 0.7,
+        "size_parameter": "power_kW"
+      },
+      "heat_exchanger": {
+        "base_cost": 1000,
+        "scaling_factor": 0.65,
+        "size_parameter": "area_m2"
+      },
+      "distillation_column": {
+        "base_cost": 25000,
+        "scaling_factor": 1.2,
+        "size_parameter": "volume_m3"
+      },
+      "separator": {
+        "base_cost": 20000,
+        "scaling_factor": 0.6,
+        "size_parameter": "volume_m3"
+      },
+      "tank": {
+        "base_cost": 8000,
+        "scaling_factor": 0.7,
+        "size_parameter": "volume_m3"
+      }
+    }
+  },
+  
+  "report_settings": {
+    "worksheets": [
+      "Executive Summary",
+      "CAPEX Breakdown", 
+      "OPEX Analysis",
+      "Equipment Details",
+      "Financial Analysis",
+      "Sensitivity Analysis",
+      "Calculation Parameters",
+      "Assumptions & Notes"
+    ],
+    
+    "charts": {
+      "enable_pie_charts": true,
+      "enable_bar_charts": true,
+      "enable_line_charts": true,
+      "chart_colors": [
+        "4472C4",
+        "70AD47", 
+        "FFC000",
+        "C5504B",
+        "7030A0"
+      ]
+    },
+    
+    "formatting": {
+      "currency_format": "\"$\"#,##0",
+      "percentage_format": "0.0%",
+      "number_format": "#,##0",
+      "date_format": "yyyy-mm-dd"
+    }
+  },
+  
+  "data_validation": {
+    "cost_range_checks": {
+      "max_equipment_cost": 10000000,
+      "min_equipment_cost": 1000,
+      "max_total_capex": 1000000000,
+      "max_annual_opex": 500000000
+    },
+    
+    "parameter_checks": {
+      "max_temperature": 1500,
+      "max_pressure": 300,
+      "max_flow_rate": 1000000
+    },
+    
+    "warning_thresholds": {
+      "high_capex_per_equipment": 1000000,
+      "high_opex_ratio": 0.5,
+      "low_npv_threshold": -1000000
+    }
+  },
+  
+  "sensitivity_analysis": {
+    "parameters": [
+      {
+        "name": "CAPEX",
+        "variations": [-30, -20, -10, 0, 10, 20, 30]
+      },
+      {
+        "name": "OPEX", 
+        "variations": [-30, -20, -10, 0, 10, 20, 30]
+      },
+      {
+        "name": "Product Price",
+        "variations": [-30, -20, -10, 0, 10, 20, 30]
+      },
+      {
+        "name": "Discount Rate",
+        "variations": [-3, -2, -1, 0, 1, 2, 3]
+      },
+      {
+        "name": "Raw Material Cost",
+        "variations": [-30, -20, -10, 0, 10, 20, 30]
+      }
+    ],
+    
+    "evaluation_metrics": [
+      "NPV",
+      "IRR", 
+      "Payback Period",
+      "Production Cost"
+    ]
+  },
+  
+  "logging": {
+    "level": "INFO",
+    "log_to_file": true,
+    "log_file": "aspen_economics_extraction.log",
+    "max_log_size": 10485760,
+    "backup_count": 5
+  },
+  
+  "file_paths": {
+    "temp_directory": "temp",
+    "backup_directory": "backups",
+    "excel_template": null,
+    "output_filename_pattern": "{project_name}_Economic_Analysis_{timestamp}.xlsx"
+  }
+}

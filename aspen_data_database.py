@@ -180,11 +180,13 @@ class AspenDataDatabase:
                 excel_specified BOOLEAN DEFAULT 0,
                 extraction_time TEXT,
                 custom_name TEXT,
+                inlet_streams TEXT,
+                outlet_streams TEXT,
                 FOREIGN KEY (session_id) REFERENCES extraction_sessions (session_id)
             )
         """)
         
-        # 换热器数据表 - Enhanced with hot/cold stream data and I-N column support
+        # 换热器数据表 - Simplified structure
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS heat_exchangers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -192,33 +194,14 @@ class AspenDataDatabase:
                 name TEXT NOT NULL,
                 duty_kw REAL DEFAULT 0.0,
                 area_m2 REAL DEFAULT 0.0,
-                temperatures TEXT,
-                pressures TEXT,
-                source TEXT DEFAULT 'unknown',
+                source TEXT DEFAULT 'excel',
                 extraction_time TEXT,
-                hot_stream_name TEXT,
-                hot_stream_inlet_temp REAL,
-                hot_stream_outlet_temp REAL,
-                hot_stream_flow_rate REAL,
-                hot_stream_composition TEXT,
-                cold_stream_name TEXT,
-                cold_stream_inlet_temp REAL,
-                cold_stream_outlet_temp REAL,
-                cold_stream_flow_rate REAL,
-                cold_stream_composition TEXT,
-                column_i_data REAL,
-                column_i_header TEXT,
-                column_j_data REAL,
-                column_j_header TEXT,
-                column_k_data REAL,
-                column_k_header TEXT,
-                column_l_data REAL,
-                column_l_header TEXT,
-                column_m_data REAL,
-                column_m_header TEXT,
-                column_n_data REAL,
-                column_n_header TEXT,
-                columns_i_to_n_raw TEXT,
+                inlet_streams TEXT,
+                outlet_streams TEXT,
+                hot_inlet_temp REAL,
+                hot_outlet_temp REAL,
+                cold_inlet_temp REAL,
+                cold_outlet_temp REAL,
                 FOREIGN KEY (session_id) REFERENCES extraction_sessions (session_id)
             )
         """)
@@ -327,8 +310,8 @@ class AspenDataDatabase:
             cursor.execute("""
                 INSERT INTO aspen_equipment 
                 (session_id, name, equipment_type, aspen_type, importance, 
-                 function, parameters, parameter_count, excel_specified, extraction_time, custom_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 function, parameters, parameter_count, excel_specified, extraction_time, custom_name, inlet_streams, outlet_streams)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 self.current_session_id,
                 eq_name,
@@ -340,69 +323,67 @@ class AspenDataDatabase:
                 eq_data.get('parameter_count', 0),
                 eq_data.get('excel_specified', False),
                 extraction_time,
-                eq_data.get('custom_name', None)
+                eq_data.get('custom_name', None),
+                json.dumps(eq_data.get('inlet_streams', [])),
+                json.dumps(eq_data.get('outlet_streams', []))
             ))
         
         self.connection.commit()
         logger.info(f"✅ Stored {len(equipment)} equipment records")
     
     def store_hex_data(self, hex_data: Dict[str, Any]):
-        """存储换热器数据 - Enhanced with I-N column support"""
+        """存储换热器数据 - Simplified structure for single hex or list of hex"""
         if not self.current_session_id:
             raise ValueError("No active session. Call start_new_session() first.")
         
         cursor = self.connection.cursor()
         extraction_time = datetime.now().isoformat()
         
-        heat_exchangers = hex_data.get('heat_exchangers', [])
+        # Handle both single hex_data and list of hex_data
+        if 'heat_exchangers' in hex_data:
+            # Old format with heat_exchangers array
+            heat_exchangers = hex_data.get('heat_exchangers', [])
+        elif 'name' in hex_data:
+            # Single hex object - wrap in list
+            heat_exchangers = [hex_data]
+        else:
+            # No recognizable format
+            logger.warning("⚠️ Unrecognized hex_data format")
+            return
         
         for hex_info in heat_exchangers:
+            # 使用已有的inlet_streams/outlet_streams，如果没有则从hot/cold stream映射
+            inlet_streams = hex_info.get('inlet_streams', [])
+            outlet_streams = hex_info.get('outlet_streams', [])
+            
+            # 如果没有inlet/outlet streams，从hot/cold stream映射
+            if not inlet_streams and hex_info.get('hot_stream_name'):
+                inlet_streams = [hex_info.get('hot_stream_name')]
+            if not outlet_streams and hex_info.get('cold_stream_name'):
+                outlet_streams = [hex_info.get('cold_stream_name')]
+            
             cursor.execute("""
                 INSERT INTO heat_exchangers 
-                (session_id, name, duty_kw, area_m2, temperatures, pressures, source, extraction_time,
-                 hot_stream_name, hot_stream_inlet_temp, hot_stream_outlet_temp, hot_stream_flow_rate, hot_stream_composition,
-                 cold_stream_name, cold_stream_inlet_temp, cold_stream_outlet_temp, cold_stream_flow_rate, cold_stream_composition,
-                 column_i_data, column_i_header, column_j_data, column_j_header, 
-                 column_k_data, column_k_header, column_l_data, column_l_header,
-                 column_m_data, column_m_header, column_n_data, column_n_header, columns_i_to_n_raw)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (session_id, name, duty_kw, area_m2, source, extraction_time,
+                 inlet_streams, outlet_streams, hot_inlet_temp, hot_outlet_temp, cold_inlet_temp, cold_outlet_temp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 self.current_session_id,
                 hex_info.get('name', 'Unknown'),
                 hex_info.get('duty', 0.0),
                 hex_info.get('area', 0.0),
-                json.dumps(hex_info.get('temperatures', {})),
-                json.dumps(hex_info.get('pressures', {})),
                 'excel',
                 extraction_time,
-                hex_info.get('hot_stream_name', None),
+                json.dumps(inlet_streams),
+                json.dumps(outlet_streams),
                 hex_info.get('hot_stream_inlet_temp', None),
                 hex_info.get('hot_stream_outlet_temp', None),
-                hex_info.get('hot_stream_flow_rate', None),
-                json.dumps(hex_info.get('hot_stream_composition', {})) if hex_info.get('hot_stream_composition') else None,
-                hex_info.get('cold_stream_name', None),
                 hex_info.get('cold_stream_inlet_temp', None),
-                hex_info.get('cold_stream_outlet_temp', None),
-                hex_info.get('cold_stream_flow_rate', None),
-                json.dumps(hex_info.get('cold_stream_composition', {})) if hex_info.get('cold_stream_composition') else None,
-                # I-N column data
-                hex_info.get('column_i_data', None),
-                hex_info.get('column_i_header', None),
-                hex_info.get('column_j_data', None),
-                hex_info.get('column_j_header', None),
-                hex_info.get('column_k_data', None),
-                hex_info.get('column_k_header', None),
-                hex_info.get('column_l_data', None),
-                hex_info.get('column_l_header', None),
-                hex_info.get('column_m_data', None),
-                hex_info.get('column_m_header', None),
-                hex_info.get('column_n_data', None),
-                hex_info.get('column_n_header', None),
-                json.dumps(hex_info.get('columns_i_to_n_raw', {})) if hex_info.get('columns_i_to_n_raw') else None
+                hex_info.get('cold_stream_outlet_temp', None)
             ))
         
         self.connection.commit()
-        logger.info(f"✅ Stored {len(heat_exchangers)} heat exchanger records with I-N column data")
+        logger.info(f"✅ Stored {len(heat_exchangers)} heat exchanger records")
     
     def finalize_session(self, summary_stats: Dict[str, Any]):
         """完成当前会话并更新统计信息"""

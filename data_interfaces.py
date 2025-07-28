@@ -12,7 +12,7 @@ Version: 1.0
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from datetime import datetime
 from enum import Enum
 
@@ -47,6 +47,46 @@ class PressureLevel(Enum):
     LOW = "low"          # < 10 bar
     MEDIUM = "medium"    # 10-50 bar
     HIGH = "high"        # > 50 bar
+
+
+class CostCategory(Enum):
+    """Cost category enumeration for economic analysis"""
+    EQUIPMENT = "equipment"
+    INSTALLATION = "installation"
+    INSTRUMENTATION = "instrumentation"
+    PIPING = "piping"
+    ELECTRICAL = "electrical"
+    BUILDINGS = "buildings"
+    YARD_IMPROVEMENTS = "yard_improvements"
+    SERVICE_FACILITIES = "service_facilities"
+    ENGINEERING = "engineering"
+    CONSTRUCTION = "construction"
+    CONTRACTORS_FEE = "contractors_fee"
+    CONTINGENCY = "contingency"
+    RAW_MATERIALS = "raw_materials"
+    UTILITIES = "utilities"
+    LABOR = "labor"
+    MAINTENANCE = "maintenance"
+    INSURANCE = "insurance"
+    DEPRECIATION = "depreciation"
+    OTHER = "other"
+
+
+class CurrencyType(Enum):
+    """Currency type enumeration"""
+    USD = "USD"
+    EUR = "EUR"
+    CNY = "CNY"
+    JPY = "JPY"
+    GBP = "GBP"
+
+
+class CostBasis(Enum):
+    """Cost basis enumeration for economic calculations"""
+    INSTALLED = "installed"
+    BARE_MODULE = "bare_module"
+    GRASSROOTS = "grassroots"
+    BATTERY_LIMITS = "battery_limits"
 
 
 @dataclass
@@ -361,3 +401,297 @@ def convert_units(value: float, from_unit: str, to_unit: str,
             return value * factor
     else:
         raise ValueError(f"Unknown conversion: {from_unit} to {to_unit} for {conversion_type}")
+
+
+# Economic Data Structures
+
+@dataclass
+class CostItem:
+    """
+    Individual cost item for economic analysis
+    
+    Represents a single cost component with detailed breakdown
+    and calculation parameters.
+    """
+    name: str
+    category: CostCategory
+    base_cost: float                    # Base cost value
+    currency: CurrencyType = CurrencyType.USD
+    basis_year: int = 2024             # Cost basis year
+    quantity: float = 1.0              # Equipment quantity
+    unit: str = "each"                 # Cost unit (each, kg, m3, etc.)
+    
+    # Cost factors and multipliers
+    installation_factor: float = 1.0   # Installation cost multiplier
+    material_factor: float = 1.0       # Material cost factor
+    location_factor: float = 1.0       # Location/region factor
+    escalation_factor: float = 1.0     # Time escalation factor
+    
+    # Calculated costs
+    installed_cost: Optional[float] = None      # Final installed cost
+    total_cost: Optional[float] = None          # Total project cost
+    
+    # Supporting data
+    vendor_quote: Optional[str] = None          # Vendor information
+    estimation_method: Optional[str] = None     # Cost estimation method used
+    cost_basis: Optional[CostBasis] = None      # Cost basis type
+    notes: List[str] = field(default_factory=list)
+    
+    def calculate_installed_cost(self) -> float:
+        """Calculate total installed cost including all factors"""
+        self.installed_cost = (self.base_cost * self.quantity * 
+                              self.installation_factor * self.material_factor * 
+                              self.location_factor * self.escalation_factor)
+        return self.installed_cost
+
+
+@dataclass
+class CapexData:
+    """
+    Capital expenditure (CAPEX) data structure
+    
+    Contains all capital investment costs broken down by category
+    and equipment type for comprehensive economic analysis.
+    """
+    project_name: str
+    total_capex: float = 0.0
+    currency: CurrencyType = CurrencyType.USD
+    basis_year: int = 2024
+    
+    # Major cost categories
+    equipment_costs: Dict[str, CostItem] = field(default_factory=dict)
+    installation_costs: Dict[str, CostItem] = field(default_factory=dict)
+    indirect_costs: Dict[str, CostItem] = field(default_factory=dict)
+    
+    # Cost breakdown by percentage
+    equipment_percentage: float = 0.0
+    installation_percentage: float = 0.0
+    engineering_percentage: float = 0.0
+    contingency_percentage: float = 0.0
+    
+    # Location and timing factors
+    location_factor: float = 1.0
+    escalation_factor: float = 1.0
+    
+    # Contingency and indirect costs
+    contingency_rate: float = 0.15        # 15% default contingency
+    engineering_rate: float = 0.12        # 12% engineering costs
+    construction_rate: float = 0.08       # 8% construction management
+    
+    def add_cost_item(self, cost_item: CostItem):
+        """Add a cost item to appropriate category"""
+        if cost_item.category == CostCategory.EQUIPMENT:
+            self.equipment_costs[cost_item.name] = cost_item
+        elif cost_item.category in [CostCategory.INSTALLATION, CostCategory.PIPING, 
+                                   CostCategory.INSTRUMENTATION, CostCategory.ELECTRICAL]:
+            self.installation_costs[cost_item.name] = cost_item
+        else:
+            self.indirect_costs[cost_item.name] = cost_item
+    
+    def calculate_total_capex(self) -> float:
+        """Calculate total CAPEX from all cost items"""
+        equipment_total = sum(item.calculate_installed_cost() 
+                            for item in self.equipment_costs.values())
+        installation_total = sum(item.calculate_installed_cost() 
+                               for item in self.installation_costs.values())
+        indirect_total = sum(item.calculate_installed_cost() 
+                           for item in self.indirect_costs.values())
+        
+        subtotal = equipment_total + installation_total + indirect_total
+        contingency = subtotal * self.contingency_rate
+        
+        self.total_capex = subtotal + contingency
+        return self.total_capex
+
+
+@dataclass
+class OpexData:
+    """
+    Operating expenditure (OPEX) data structure
+    
+    Contains all annual operating costs including raw materials,
+    utilities, labor, and maintenance for economic analysis.
+    """
+    project_name: str
+    annual_opex: float = 0.0
+    currency: CurrencyType = CurrencyType.USD
+    operating_hours: float = 8760.0      # Annual operating hours
+    
+    # Raw material costs
+    raw_material_costs: Dict[str, CostItem] = field(default_factory=dict)
+    
+    # Utility costs
+    utility_costs: Dict[str, CostItem] = field(default_factory=dict)
+    
+    # Labor and overhead
+    labor_costs: Dict[str, CostItem] = field(default_factory=dict)
+    
+    # Maintenance and other fixed costs
+    maintenance_costs: Dict[str, CostItem] = field(default_factory=dict)
+    
+    # Operating cost factors (as percentage of CAPEX)
+    maintenance_rate: float = 0.03        # 3% of CAPEX annually
+    insurance_rate: float = 0.005         # 0.5% of CAPEX annually
+    property_tax_rate: float = 0.02       # 2% of CAPEX annually
+    
+    def add_opex_item(self, cost_item: CostItem):
+        """Add an operating cost item to appropriate category"""
+        if cost_item.category == CostCategory.RAW_MATERIALS:
+            self.raw_material_costs[cost_item.name] = cost_item
+        elif cost_item.category == CostCategory.UTILITIES:
+            self.utility_costs[cost_item.name] = cost_item
+        elif cost_item.category == CostCategory.LABOR:
+            self.labor_costs[cost_item.name] = cost_item
+        elif cost_item.category == CostCategory.MAINTENANCE:
+            self.maintenance_costs[cost_item.name] = cost_item
+    
+    def calculate_annual_opex(self, capex_total: float = 0.0) -> float:
+        """Calculate total annual OPEX"""
+        raw_materials_total = sum(item.calculate_installed_cost() 
+                                for item in self.raw_material_costs.values())
+        utilities_total = sum(item.calculate_installed_cost() 
+                            for item in self.utility_costs.values())
+        labor_total = sum(item.calculate_installed_cost() 
+                        for item in self.labor_costs.values())
+        maintenance_total = sum(item.calculate_installed_cost() 
+                              for item in self.maintenance_costs.values())
+        
+        # Add fixed costs based on CAPEX
+        maintenance_fixed = capex_total * self.maintenance_rate
+        insurance_fixed = capex_total * self.insurance_rate
+        property_tax_fixed = capex_total * self.property_tax_rate
+        
+        self.annual_opex = (raw_materials_total + utilities_total + labor_total + 
+                           maintenance_total + maintenance_fixed + 
+                           insurance_fixed + property_tax_fixed)
+        return self.annual_opex
+
+
+@dataclass
+class FinancialParameters:
+    """
+    Financial analysis parameters for economic evaluation
+    
+    Contains all financial assumptions and calculated metrics
+    for project profitability analysis.
+    """
+    project_name: str
+    
+    # Time parameters
+    project_life: int = 20               # Project life in years
+    construction_period: int = 2         # Construction period in years
+    startup_period: int = 1              # Startup period in years
+    
+    # Financial assumptions
+    discount_rate: float = 0.10          # Discount rate (10%)
+    tax_rate: float = 0.25               # Corporate tax rate (25%)
+    depreciation_method: str = "straight_line"
+    depreciation_life: int = 10          # Depreciation life in years
+    
+    # Working capital
+    working_capital_rate: float = 0.05   # As percentage of annual sales
+    
+    # Revenue parameters
+    annual_revenue: float = 0.0          # Annual revenue
+    product_price: float = 0.0           # Product selling price
+    annual_production: float = 0.0       # Annual production capacity
+    
+    # Calculated financial metrics
+    npv: Optional[float] = None          # Net Present Value
+    irr: Optional[float] = None          # Internal Rate of Return
+    payback_period: Optional[float] = None  # Simple payback period
+    discounted_payback: Optional[float] = None  # Discounted payback period
+    roi: Optional[float] = None          # Return on Investment
+    
+    # Cash flow components
+    annual_cash_flows: List[float] = field(default_factory=list)
+    cumulative_cash_flows: List[float] = field(default_factory=list)
+    
+    def calculate_npv(self, capex: float, annual_opex: float) -> float:
+        """Calculate Net Present Value"""
+        cash_flows = []
+        
+        # Initial investment (negative cash flow)
+        cash_flows.append(-capex)
+        
+        # Annual operating cash flows
+        annual_net_cash_flow = self.annual_revenue - annual_opex
+        annual_after_tax = annual_net_cash_flow * (1 - self.tax_rate)
+        
+        for year in range(1, self.project_life + 1):
+            discounted_flow = annual_after_tax / ((1 + self.discount_rate) ** year)
+            cash_flows.append(discounted_flow)
+        
+        self.npv = sum(cash_flows)
+        self.annual_cash_flows = cash_flows
+        return self.npv
+
+
+@dataclass
+class EconomicAnalysisResults:
+    """
+    Complete economic analysis results container
+    
+    Aggregates all economic data and analysis results for
+    comprehensive TEA (Techno-Economic Analysis) reporting.
+    """
+    project_name: str
+    timestamp: datetime
+    analysis_version: str = "1.0"
+    
+    # Cost data
+    capex_data: CapexData = field(default_factory=lambda: CapexData(""))
+    opex_data: OpexData = field(default_factory=lambda: OpexData(""))
+    financial_params: FinancialParameters = field(default_factory=lambda: FinancialParameters(""))
+    
+    # Equipment sizing and costing
+    equipment_list: Dict[str, EquipmentSizeData] = field(default_factory=dict)
+    
+    # Summary metrics
+    total_capex: float = 0.0
+    annual_opex: float = 0.0
+    production_cost: float = 0.0         # Cost per unit of product
+    break_even_price: float = 0.0        # Break-even selling price
+    
+    # Economic indicators
+    npv: float = 0.0
+    irr: float = 0.0
+    payback_period: float = 0.0
+    
+    # Sensitivity analysis results
+    sensitivity_parameters: Dict[str, Any] = field(default_factory=dict)
+    sensitivity_results: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    
+    # Data sources and methodology
+    data_sources: List[str] = field(default_factory=list)
+    estimation_methods: List[str] = field(default_factory=list)
+    assumptions: List[str] = field(default_factory=list)
+    
+    # Quality metrics
+    confidence_level: Optional[str] = None  # High, Medium, Low
+    accuracy_range: Optional[str] = None    # ±10%, ±25%, ±50%
+    
+    def calculate_production_cost(self) -> float:
+        """Calculate production cost per unit"""
+        if self.financial_params.annual_production > 0:
+            annual_total_cost = (self.annual_opex + 
+                               self.total_capex / self.financial_params.project_life)
+            self.production_cost = annual_total_cost / self.financial_params.annual_production
+        return self.production_cost
+    
+    def get_economic_summary(self) -> Dict[str, Any]:
+        """Get summary of economic analysis results"""
+        return {
+            'project_name': self.project_name,
+            'analysis_date': self.timestamp.isoformat(),
+            'total_capex': self.total_capex,
+            'annual_opex': self.annual_opex,
+            'production_cost': self.production_cost,
+            'npv': self.npv,
+            'irr': self.irr,
+            'payback_period': self.payback_period,
+            'confidence_level': self.confidence_level,
+            'accuracy_range': self.accuracy_range,
+            'equipment_count': len(self.equipment_list),
+            'data_sources_count': len(self.data_sources)
+        }
